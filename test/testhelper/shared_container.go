@@ -44,10 +44,26 @@ func GetSharedElasticsearch() *SharedElasticsearch {
 
 // Start inicializa o container Elasticsearch compartilhado
 func (s *SharedElasticsearch) Start(ctx context.Context) error {
+	// Primeiro, tenta reutilizar container existente (sem lock global)
+	s.mu.RLock()
+	if s.started && s.client != nil {
+		s.mu.RUnlock()
+		// Testa conexão sem lock para permitir paralelismo
+		if err := s.testConnection(); err == nil {
+			atomic.AddInt32(&s.refCount, 1)
+			return nil
+		}
+		// Conexão perdida, precisa reinicializar
+	} else {
+		s.mu.RUnlock()
+	}
+	
+	// Se chegou aqui, precisa criar/recriar o container
+	// Agora sim usa lock exclusivo apenas para criação
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	// Se já está iniciado e funcionando, apenas incrementa referência
+	// Double-check: outro goroutine pode ter criado enquanto aguardava lock
 	if s.started && s.client != nil {
 		if err := s.testConnection(); err == nil {
 			atomic.AddInt32(&s.refCount, 1)
