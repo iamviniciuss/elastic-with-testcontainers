@@ -2,7 +2,7 @@
 
 # Variáveis
 GO_FILES := $(shell find . -name "*.go" -type f)
-TEST_TIMEOUT := 300s
+TEST_TIMEOUT := 60s
 COVERAGE_FILE := coverage.out
 
 # Comandos principais
@@ -29,7 +29,7 @@ test-integration-clean: ## Executa testes de integração sem reutilizar contain
 
 test-integration-external: ## Executa testes usando Elasticsearch externo
 	@echo "🔗 Executando testes com Elasticsearch externo..."
-	USE_EXTERNAL_ES=true ES_URL=http://localhost:9200 go test -timeout $(TEST_TIMEOUT) -v ./internal/...
+	USE_EXTERNAL_ES=true ES_URL=http://localhost:9209 go test -timeout $(TEST_TIMEOUT) -v ./internal/... -count=1
 
 test-all: ## Executa todos os testes
 	@echo "🚀 Executando todos os testes..."
@@ -87,6 +87,39 @@ dev-setup: deps ## Configura ambiente de desenvolvimento
 
 dev-test: fmt vet test-integration ## Executa pipeline completo de desenvolvimento
 	@echo "✅ Pipeline de desenvolvimento concluído!"
+
+# Comandos para Elasticsearch externo via Docker Compose
+es-up: ## Inicia Elasticsearch via Docker Compose
+	@echo "🚀 Iniciando Elasticsearch com Docker Compose..."
+	docker-compose up -d elasticsearch
+	@echo "⏳ Aguardando Elasticsearch ficar pronto..."
+	@for i in $$(seq 1 30); do \
+		if curl -f http://localhost:9209/_cluster/health >/dev/null 2>&1; then \
+			echo "✅ Elasticsearch pronto em http://localhost:9209"; \
+			exit 0; \
+		fi; \
+		sleep 2; \
+	done; \
+	echo "❌ Elasticsearch não ficou pronto em 60s"; \
+	exit 1
+
+es-down: ## Para Elasticsearch via Docker Compose
+	@echo "🛑 Parando Elasticsearch..."
+	docker-compose down
+
+es-restart: ## Reinicia Elasticsearch via Docker Compose
+	@echo "🔄 Reiniciando Elasticsearch..."
+	docker-compose restart elasticsearch
+
+es-logs: ## Mostra logs do Elasticsearch
+	@echo "📋 Logs do Elasticsearch:"
+	docker-compose logs -f elasticsearch
+
+es-status: ## Verifica status do Elasticsearch
+	@echo "📊 Status do Elasticsearch:"
+	@curl -f http://localhost:9209/_cluster/health?pretty 2>/dev/null || echo "❌ Elasticsearch não está acessível"
+
+test-with-compose: es-up test-integration-external es-down ## Executa testes completos com Docker Compose
 
 # Comandos para CI/CD
 ci-test: ## Comando otimizado para CI/CD

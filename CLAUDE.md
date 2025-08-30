@@ -150,14 +150,106 @@ func TestRepository(t *testing.T) {
 | `DEBUG_TEST_CONTAINERS` | Ativa logs de debug | `false` |
 | `TEST_CONTAINER_REUSE` | Reutiliza containers entre execuções | `true` |
 
-### Exemplo de Uso
+## 🐳 Docker Compose para Elasticsearch Externo
+
+### Configuração
+
+O projeto inclui um `docker-compose.yml` pré-configurado com as mesmas configurações dos testcontainers:
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.2.0
+    container_name: test-elasticsearch
+    environment:
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - bootstrap.memory_lock=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    # ... outras configurações
+```
+
+### Comandos Disponíveis
 
 ```bash
-# Usar Elasticsearch externo (CI/CD)
+# Iniciar Elasticsearch
+make es-up
+
+# Executar testes com ES externo
+make test-integration-external
+
+# Pipeline completo (iniciar ES + rodar testes + parar ES)
+make test-with-compose
+
+# Verificar status
+make es-status
+
+# Ver logs
+make es-logs
+
+# Parar Elasticsearch
+make es-down
+```
+
+### Exemplos de Uso
+
+#### 1. Desenvolvimento Local com Docker Compose
+```bash
+# Inicia ES em background
+make es-up
+
+# Roda testes usando a instância externa
+make test-integration-external
+
+# Quando terminar, para o ES
+make es-down
+```
+
+#### 2. Pipeline Automatizado
+```bash
+# Execução completa: up + test + down
+make test-with-compose
+```
+
+#### 3. Debugging com ES Externo
+```bash
+# Inicia ES
+make es-up
+
+# Roda testes com debug
+DEBUG_TEST_CONTAINERS=true USE_EXTERNAL_ES=true ES_URL=http://localhost:9200 go test -v ./...
+
+# Para ES quando terminar
+make es-down
+```
+
+#### 4. Uso Manual das Variáveis
+```bash
+# Usar Elasticsearch externo (qualquer URL)
 USE_EXTERNAL_ES=true ES_URL=http://localhost:9200 go test ./...
+
+# Usar instância remota
+USE_EXTERNAL_ES=true ES_URL=http://my-es-server:9200 go test ./...
 
 # Debug de containers
 DEBUG_TEST_CONTAINERS=true go test -v ./...
+```
+
+#### 5. Verificações de Status
+```bash
+# Verificar se ES está funcionando
+make es-status
+
+# Verificar saúde do cluster
+curl http://localhost:9200/_cluster/health?pretty
+
+# Listar índices
+curl http://localhost:9200/_cat/indices?v
 ```
 
 ## 📊 Estratégias de Isolamento

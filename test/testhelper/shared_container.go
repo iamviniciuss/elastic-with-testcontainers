@@ -126,7 +126,7 @@ func (s *SharedElasticsearch) startContainer(ctx context.Context) error {
 func (s *SharedElasticsearch) setupExternalElasticsearch() error {
 	esURL := os.Getenv("ES_URL")
 	if esURL == "" {
-		esURL = "http://localhost:9200"
+		esURL = "http://localhost:9209"
 	}
 	
 	cfg := elasticsearch.Config{
@@ -145,8 +145,7 @@ func (s *SharedElasticsearch) setupExternalElasticsearch() error {
 	}
 	res.Body.Close()
 	
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Não precisa de lock aqui pois já estamos dentro do contexto de lock da função Start()
 	s.client = client
 	s.url = esURL
 	
