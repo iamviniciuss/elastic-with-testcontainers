@@ -27,7 +27,6 @@ Este projeto demonstra a implementação de um sistema de container compartilhad
 │       ├── product_service.go
 │       └── product_service_test.go         # ✅ Novo modelo
 ├── Makefile                         # Comandos de teste e utilitários
-├── main_test.go                     # TestMain para cleanup
 └── go.mod                           # Dependências
 ```
 

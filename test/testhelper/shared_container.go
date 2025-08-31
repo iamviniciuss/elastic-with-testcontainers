@@ -162,8 +162,6 @@ func (s *SharedElasticsearch) setupTestcontainer(ctx context.Context) error {
 		fmt.Println("🚀 Starting shared Elasticsearch container...")
 	}
 
-	// os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "false")
-
 	genericContainerRequest := &testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			WaitingFor: wait.ForLog("started").WithPollInterval(50 * time.Millisecond),
@@ -171,12 +169,9 @@ func (s *SharedElasticsearch) setupTestcontainer(ctx context.Context) error {
 			Env: map[string]string{
 				"ES_JAVA_OPTS":   "-Xms256m -Xmx256m",
 				"discovery.type": "single-node",
-				// "node.name":      "shared-elasticsearch-test5",
-				// "cluster.name":   "shared-elasticsearch-test5",
 				"xpack.security.enabled": "false",
 				"bootstrap.memory_lock": "false",
 			},
-			// ExposedPorts: []string{"9200/tcp", "9300/tcp"},
 		},
 		Started:      false,
 		Reuse:        true,
@@ -214,17 +209,11 @@ func (s *SharedElasticsearch) setupTestcontainer(ctx context.Context) error {
 	defer resp.Body.Close()
 
 
-	// log.Panicf("Elasticsearch container started successfully", address)
 	log.Println("Elasticsearch container started successfully", container.Settings.Address)
 
-
-	
-
-	// s.mu.Lock()
 	s.container = container
 	s.client = esClient
 	s.url = container.Settings.Address
-	// s.mu.Unlock()
 	
 	if isDebugEnabled() {
 		fmt.Printf("✅ Shared Elasticsearch container started at %s\n", container.Settings.Address)
@@ -328,14 +317,6 @@ func isDebugEnabled() bool {
 func shouldReuseContainer() bool {
 	reuse, _ := strconv.ParseBool(os.Getenv("TEST_CONTAINER_REUSE"))
 	return reuse || true // Por padrão, sempre reutiliza para testes
-}
-
-// CleanupSharedResources limpa recursos compartilhados (chamada no TestMain)
-func CleanupSharedResources(ctx context.Context) error {
-	if sharedES != nil {
-		return sharedES.Stop(ctx)
-	}
-	return nil
 }
 
 // testConnection testa se a conexão com Elasticsearch está funcionando

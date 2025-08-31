@@ -206,7 +206,6 @@ func (s *IntegrationTestSuite) SearchDocuments(indexName string, query map[strin
 
 // WaitForIndexing aguarda a indexação dos documentos
 func (s *IntegrationTestSuite) WaitForIndexing() {
-	return
 	s.t.Helper()
 	
 	err := s.sharedES.RefreshIndices(s.ctx)
