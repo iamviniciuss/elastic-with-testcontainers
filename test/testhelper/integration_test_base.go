@@ -3,6 +3,7 @@ package testhelper
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,17 +14,27 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 // IntegrationTestSuite fornece funcionalidades base para testes de integração
+// Agora integrada com o TestDependenciesBuilder para suporte a múltiplas dependências
 type IntegrationTestSuite struct {
 	t        *testing.T
 	ctx      context.Context
-	sharedES *SharedElasticsearch
 	tenantID string
+	
+	// Dependências compartilhadas individuais (compatibilidade com código existente)
+	sharedES    *SharedElasticsearch
+	sharedMongo *SharedMongoDB
+	sharedPG    *SharedPostgreSQL
+	
+	// Builder para uso avançado
+	builder *TestDependenciesBuilder
 }
 
 // NewIntegrationTestSuite cria uma nova suite de testes de integração
+// Mantém compatibilidade com código existente (apenas Elasticsearch)
 func NewIntegrationTestSuite(t *testing.T) *IntegrationTestSuite {
 	return &IntegrationTestSuite{
 		t:        t,
@@ -31,6 +42,75 @@ func NewIntegrationTestSuite(t *testing.T) *IntegrationTestSuite {
 		sharedES: GetSharedElasticsearch(),
 		tenantID: GenerateTenantID(),
 	}
+}
+
+// NewIntegrationTestSuiteWithBuilder cria uma suite usando o TestDependenciesBuilder
+func NewIntegrationTestSuiteWithBuilder(t *testing.T, builder *TestDependenciesBuilder) *IntegrationTestSuite {
+	suite := &IntegrationTestSuite{
+		t:        t,
+		ctx:      context.Background(),
+		builder:  builder,
+		tenantID: GenerateTenantID(),
+	}
+	
+	// Se o builder tem Elasticsearch, inicializa sharedES para compatibilidade
+	if builder.ESConn != nil {
+		suite.sharedES = GetSharedElasticsearch()
+	}
+	
+	// Se o builder tem MongoDB, inicializa sharedMongo
+	if builder.MongoConn != nil {
+		suite.sharedMongo = GetSharedMongoDB()
+	}
+	
+	// Se o builder tem PostgreSQL, inicializa sharedPG
+	if builder.PostgresConn != nil {
+		suite.sharedPG = GetSharedPostgreSQL()
+	}
+	
+	return suite
+}
+
+// NewIntegrationTestSuiteBuilder retorna um builder para configuração fluente
+func NewIntegrationTestSuiteBuilder(t *testing.T) *IntegrationTestSuiteBuilder {
+	return &IntegrationTestSuiteBuilder{
+		t:            t,
+		depBuilder:   NewTestDependenciesBuilder(),
+	}
+}
+
+// IntegrationTestSuiteBuilder permite configuração fluente da suite de testes
+type IntegrationTestSuiteBuilder struct {
+	t          *testing.T
+	depBuilder *TestDependenciesBuilder
+}
+
+// WithPostgres configura PostgreSQL
+func (b *IntegrationTestSuiteBuilder) WithPostgres(sqlFilePaths ...string) *IntegrationTestSuiteBuilder {
+	b.depBuilder.WithPostgres(sqlFilePaths...)
+	return b
+}
+
+// WithMongo configura MongoDB
+func (b *IntegrationTestSuiteBuilder) WithMongo() *IntegrationTestSuiteBuilder {
+	b.depBuilder.WithMongo()
+	return b
+}
+
+// WithElasticsearch configura Elasticsearch
+func (b *IntegrationTestSuiteBuilder) WithElasticsearch() *IntegrationTestSuiteBuilder {
+	b.depBuilder.WithElasticsearch()
+	return b
+}
+
+// Build constrói e retorna a IntegrationTestSuite
+func (b *IntegrationTestSuiteBuilder) Build() (*IntegrationTestSuite, error) {
+	deps, err := b.depBuilder.Build()
+	if err != nil {
+		return nil, err
+	}
+	
+	return NewIntegrationTestSuiteWithBuilder(b.t, deps), nil
 }
 
 // Setup inicializa a suite e limpa o estado do Elasticsearch
@@ -56,7 +136,43 @@ func (s *IntegrationTestSuite) Teardown() {
 
 // ES retorna o cliente Elasticsearch
 func (s *IntegrationTestSuite) ES() *elasticsearch.Client {
+	if s.builder != nil && s.builder.ESConn != nil {
+		return s.builder.ESConn
+	}
 	return s.sharedES.GetClient()
+}
+
+// Postgres retorna a conexão PostgreSQL (se configurada via builder)
+func (s *IntegrationTestSuite) Postgres() *sql.DB {
+	if s.builder != nil && s.builder.PostgresConn != nil {
+		return s.builder.PostgresConn
+	}
+	if s.sharedPG != nil {
+		return s.sharedPG.GetConnection()
+	}
+	return nil
+}
+
+// Mongo retorna o database MongoDB principal (se configurado via builder)
+func (s *IntegrationTestSuite) Mongo() *mongo.Database {
+	if s.builder != nil && s.builder.MongoConn != nil {
+		return s.builder.MongoConn
+	}
+	if s.sharedMongo != nil {
+		return s.sharedMongo.GetDatabase()
+	}
+	return nil
+}
+
+// MongoDW retorna o database MongoDB DW (se configurado via builder)
+func (s *IntegrationTestSuite) MongoDW() *mongo.Database {
+	if s.builder != nil && s.builder.MongoConnDW != nil {
+		return s.builder.MongoConnDW
+	}
+	if s.sharedMongo != nil {
+		return s.sharedMongo.GetDatabaseDW()
+	}
+	return nil
 }
 
 // GetElasticsearchURL retorna a URL do Elasticsearch
@@ -68,8 +184,62 @@ func (s *IntegrationTestSuite) GetElasticsearchURL() string {
 func (s *IntegrationTestSuite) CleanElasticsearch() {
 	s.t.Helper()
 	
+	if s.builder != nil && s.builder.ESClearFunc != nil {
+		s.builder.ESClearFunc()
+		return
+	}
+	
 	err := s.sharedES.CleanIndices(s.ctx)
 	require.NoError(s.t, err, "Failed to clean Elasticsearch indices")
+}
+
+// CleanMongo remove todas as coleções do MongoDB para isolamento entre testes
+func (s *IntegrationTestSuite) CleanMongo() {
+	s.t.Helper()
+	
+	if s.builder != nil && s.builder.MongoClearFunc != nil {
+		err := s.builder.MongoClearFunc(s.ctx)
+		require.NoError(s.t, err, "Failed to clean MongoDB collections")
+		return
+	}
+	
+	if s.sharedMongo != nil {
+		err := s.sharedMongo.CleanDatabase(s.ctx)
+		require.NoError(s.t, err, "Failed to clean MongoDB collections")
+	}
+}
+
+// CleanPostgres trunca todas as tabelas do PostgreSQL para isolamento entre testes
+func (s *IntegrationTestSuite) CleanPostgres() {
+	s.t.Helper()
+	
+	if s.builder != nil && s.builder.PostgresClearFunc != nil {
+		err := s.builder.PostgresClearFunc(s.ctx)
+		require.NoError(s.t, err, "Failed to clean PostgreSQL tables")
+		return
+	}
+	
+	if s.sharedPG != nil {
+		err := s.sharedPG.CleanDatabase(s.ctx)
+		require.NoError(s.t, err, "Failed to clean PostgreSQL tables")
+	}
+}
+
+// CleanAll limpa todas as dependências configuradas
+func (s *IntegrationTestSuite) CleanAll() {
+	s.t.Helper()
+	
+	if s.ES() != nil {
+		s.CleanElasticsearch()
+	}
+	
+	if s.Mongo() != nil {
+		s.CleanMongo()
+	}
+	
+	if s.Postgres() != nil {
+		s.CleanPostgres()
+	}
 }
 
 // CreateIndex cria um novo índice com mapping opcional

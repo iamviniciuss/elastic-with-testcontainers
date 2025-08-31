@@ -21,7 +21,7 @@ test-unit: ## Executa apenas testes unitários (sem containers)
 
 test-integration: ## Executa testes de integração com container compartilhado
 	@echo "🐳 Executando testes de integração..."
-	TEST_CONTAINER_REUSE=true go test -v -timeout $(TEST_TIMEOUT) -v ./internal/...
+	TEST_CONTAINER_REUSE=true go test -v -timeout $(TEST_TIMEOUT) -v ./internal/... -count=1
 
 test-integration-clean: ## Executa testes de integração sem reutilizar containers
 	@echo "🐳 Executando testes de integração (sem reutilização)..."

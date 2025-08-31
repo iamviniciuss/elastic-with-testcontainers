@@ -14,8 +14,18 @@ import (
 // EXEMPLO DE TESTE DE SERVICE USANDO CONTAINER COMPARTILHADO
 func TestProductService(t *testing.T) {
 	// ✅ Mesmo container compartilhado, mas em outro package
-	suite := testhelper.NewIntegrationTestSuite(t)
-	suite.Setup()
+	builder := testhelper.NewIntegrationTestSuiteBuilder(t)
+	
+	builder.
+		WithElasticsearch()
+		// WithMongo().
+		// WithPostgres()
+
+	suite, err := builder.Build()
+	if err != nil {
+		t.Fatalf("Failed to build test suite: %v", err)
+	}
+
 	defer suite.Teardown()
 	
 	// Setup da cadeia de dependências
